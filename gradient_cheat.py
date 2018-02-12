@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import subprocess
 import math
+import numpy
 
 # Old Ethane fit
 '''
@@ -22,26 +23,27 @@ factor = 1.0
 
 
 # Eclipsed Ethane fit (new basis)
-'''
+
 no_atoms = 8
 a = 0.472942
 b = 1.68207
 x0 = 2.43729
 factor = 1.0
-'''
+
 
 
 # Ethene fit (new basis)
-
+'''
 no_atoms = 8
 a = 3.48487
 b = 1.94326
 c = -2.72191
 x0 = 1.74196
 factor = 1.0
-
 '''
+
 # Ethene fit (new basis)
+'''
 no_atoms = 8
 a = 368.126
 b = 0.169015
@@ -50,6 +52,9 @@ x0 = -3.53757
 factor = 1.0
 '''
 
+carbon_index_1 = 1
+carbon_index_2 = 4
+
 
 def calculate_gradient_correction(dcc):
     return -b * a * math.exp(-b*(dcc - x0))
@@ -57,9 +62,40 @@ def calculate_gradient_correction(dcc):
 
 
 def calculate_energy_correction(dcc):
-    # return a * math.exp(-b*(dcc - x0))
-    return a * math.exp(-b*(dcc - x0)) + c
+    return a * math.exp(-b*(dcc - x0))
+    # return a * math.exp(-b*(dcc - x0)) + c
     #return a * math.exp(-b*(dcc - x0)**2) + c
+
+
+def lengtherise_vector(vector, target_length):
+    # current_length = numpy.linalg.norm(numpy.array(vector))
+    current_length = numpy.linalg.norm(vector)
+    return vector * (target_length/current_length)
+
+
+def calculate_vector_corrections(gradxyz_1, gradxyz_2, correction, correction_factor):
+    gradxyz_1 = numpy.array(gradxyz_1)
+    gradxyz_2 = numpy.array(gradxyz_2)
+    corrected_length1 = numpy.linalg.norm(gradxyz_1) + correction_factor * correction
+    new_grad_1 = lengtherise_vector(gradxyz_1, corrected_length1)
+    corrected_length2 = numpy.linalg.norm(gradxyz_2) - correction_factor * correction
+    new_grad_2 = lengtherise_vector(gradxyz_2, corrected_length2)
+    return [new_grad_1, new_grad_2]
+
+
+def translate_into_fortran(dEdq):
+    new_dE_string = dEdq = ("%e" % dEdq).replace('e', 'D')
+    if dEdq[0] == '-' and dEdq[2] == '.':
+        if dEdq[-1] == '0':
+            new_ending = 1
+        elif dEdq[-3] == '+':
+            new_ending = int(dEdq[-1]) + 1
+        elif dEdq[-3] == '-':
+            new_ending = int(dEdq[-1]) - 1
+        new_beginning = dEdq[0] + '.' + dEdq[1]
+        new_dE_string = new_beginning + dEdq[3:-1] + str(new_ending)
+        log_file.writelines("Translated into FORTRAN: %s\n" % new_dE_string)
+    return new_dE_string
 
 
 log_file = open('cheating.log', 'w+')
@@ -69,24 +105,22 @@ log_file.writelines("Attempting to correct gradient...\n\n")
 #  Get c c distance and find correction
 distance_output = subprocess.check_output(['dist', 'c', 'c'], universal_newlines=True)
 distance_cc = float(distance_output.split()[7])
-log_file.writelines('dist output: ' + distance_output)
+log_file.writelines('dist output: ' + str(distance_output) + '\n')
 gradient_correction = calculate_gradient_correction(distance_cc)
 energy_correction = calculate_energy_correction(distance_cc)
+log_file.writelines("Calculated a correction of: %s \n" % str(gradient_correction))
 
 #  Get gradient
 gradient_file = open('gradient', 'r')
 gradient_file_data = gradient_file.readlines()
 gradient_file.close()
-dEdZ_line1_raw = gradient_file_data[-1-no_atoms]
-dEdZ_line2_raw = gradient_file_data[-no_atoms]
-dEdZ_line1 = dEdZ_line1_raw.split()
-dEdZ_line2 = dEdZ_line2_raw.split()
-log_file.writelines('1st atom gradient: ' + dEdZ_line1_raw + '\n')
-log_file.writelines('2nd atom gradient: ' + dEdZ_line2_raw + '\n')
-dEdZ1 = float(dEdZ_line1[2].replace('D', 'e'))
-dEdZ2 = float(dEdZ_line2[2].replace('D', 'e'))
-new_dEdZ1 = dEdZ1 + factor*gradient_correction
-new_dEdZ2 = dEdZ2 - factor*gradient_correction
+dEdq_line1_raw = gradient_file_data[-2-no_atoms+carbon_index_1]
+dEdq_line2_raw = gradient_file_data[-1-no_atoms+carbon_index_2]
+dEdq_line1 = [float(s) for s in dEdq_line1_raw.replace('D', 'e').split()]
+dEdq_line2 = [float(s) for s in dEdq_line2_raw.replace('D', 'e').split()]
+log_file.writelines('1st atom gradient: ' + dEdq_line1_raw + '\n')
+log_file.writelines('2nd atom gradient: ' + dEdq_line2_raw + '\n')
+new_dEs = calculate_vector_corrections(dEdq_line1, dEdq_line2, gradient_correction, factor)
 
 #  Get energy
 energy_line_raw = None
@@ -100,39 +134,19 @@ energy = float(energy_line[6])
 new_energy_string = str(energy + energy_correction)
 
 
-def translate_into_fortran(dEdZ):
-    new_dE_string = dEdZ
-    if dEdZ[0] == '-' and dEdZ[2] == '.':
-        if dEdZ[-1] == '0':
-            new_ending = 1
-        elif dEdZ[-3] == '+':
-            new_ending = int(dEdZ[-1]) + 1
-        elif dEdZ[-3] == '-':
-            new_ending = int(dEdZ[-1]) - 1
-        new_beginning = dEdZ[0] + '.' + dEdZ[1]
-        new_dE_string = new_beginning + dEdZ[3:-1] + str(new_ending)
-        log_file.writelines("Translated into FORTRAN: %s\n" % new_dE_string)
-    return new_dE_string
-
-
 #  Translate from sensible formatting into FORTRAN
-new_dE_string1 = ("%e" % new_dEdZ1).replace('e', 'D')
-new_dE_string2 = ("%e" % new_dEdZ2).replace('e', 'D')
+log_file.writelines(str(new_dEs))
+new_dE_string1 = '  %s  %s  %s\n' % (translate_into_fortran(new_dEs[0][0]),
+                                     translate_into_fortran(new_dEs[0][1]),
+                                     translate_into_fortran(new_dEs[0][2]))
+new_dE_string2 = '  %s  %s  %s\n' % (translate_into_fortran(new_dEs[1][0]),
+                                     translate_into_fortran(new_dEs[1][1]),
+                                     translate_into_fortran(new_dEs[1][2]))
 log_file.writelines("New dE strings: %s %s\n" % (new_dE_string1, new_dE_string2))
-new_dE_string1 = translate_into_fortran(new_dE_string1)
-new_dE_string2 = translate_into_fortran(new_dE_string2)
 
 #  Insert new gradients
-gradient_file_data.insert(-1-no_atoms, '  %s  %s  %s\n' % (
-    dEdZ_line1[0],
-    dEdZ_line1[1],
-    new_dE_string1)
-)
-gradient_file_data.insert(-1-no_atoms, '  %s  %s  %s\n' % (
-    dEdZ_line2[0],
-    dEdZ_line2[1],
-    new_dE_string2)
-)
+gradient_file_data.insert(-2-no_atoms+carbon_index_1, new_dE_string1)
+gradient_file_data.insert(-2-no_atoms+carbon_index_2, new_dE_string2)
 
 #  Insert new energy
 log_file.writelines("cycle line index: %s\n" % str(gradient_file_data.index(energy_line_raw)))
@@ -149,27 +163,9 @@ gradient_file_data.insert(-2*no_atoms-3, '  %s  %s  %s %s %s %s %s %s %s %s\n' %
     energy_line[9]
 )
 )
-#
-# #zero hydrogens
-# gradient_file_data.insert(-1-no_atoms, '  %s  %s  %s\n' % (
-#     '0.0D+00',
-#     '0.0D+00',
-#     '0.0D+00')
-# )
-# gradient_file_data.insert(-1-no_atoms, '  %s  %s  %s\n' % (
-#     '0.0D+00',
-#     '0.0D+00',
-#     '0.0D+00')
-# )
 
-
-# h1_line1_raw = gradient_file_data[-no_atoms+1]
-# h2_line2_raw = gradient_file_data[-no_atoms+2]
-# gradient_file_data.remove(h1_line1_raw)
-# gradient_file_data.remove(h2_line2_raw)
-
-gradient_file_data.remove(dEdZ_line1_raw)
-gradient_file_data.remove(dEdZ_line2_raw)
+gradient_file_data.remove(dEdq_line1_raw)
+gradient_file_data.remove(dEdq_line2_raw)
 gradient_file_data.remove(energy_line_raw)
 with open('gradient', 'w') as gradient_file:
     gradient_file.writelines(gradient_file_data)
@@ -185,7 +181,7 @@ log_file.writelines('''Gradient correction performed:\n
                     old energy: %s\n                    
                     new energy: %s\n                    
 '''
-                    % (distance_cc, gradient_correction, new_dEdZ1, new_dEdZ2,
+                    % (distance_cc, gradient_correction, new_dEs[0], new_dEs[1],
                        new_dE_string1, new_dE_string2, str(energy), new_energy_string))
 log_file.close()
 
