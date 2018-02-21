@@ -78,7 +78,7 @@ def calculate_vector_corrections(gradxyz_1, gradxyz_2, correction, correction_fa
     gradxyz_2 = numpy.array(gradxyz_2)
     corrected_length1 = numpy.linalg.norm(gradxyz_1) + correction_factor * correction
     new_grad_1 = lengtherise_vector(gradxyz_1, corrected_length1)
-    corrected_length2 = numpy.linalg.norm(gradxyz_2) - correction_factor * correction
+    corrected_length2 = numpy.linalg.norm(gradxyz_2) + correction_factor * correction
     new_grad_2 = lengtherise_vector(gradxyz_2, corrected_length2)
     return [new_grad_1, new_grad_2]
 
@@ -103,7 +103,7 @@ log_file.writelines("Attempting to correct gradient...\n\n")
 
 
 #  Get c c distance and find correction
-distance_output = subprocess.check_output(['dist', 'c', 'c'], universal_newlines=True)
+distance_output = subprocess.check_output(['dist', str(carbon_index_1), str(carbon_index_2)], universal_newlines=True)
 distance_cc = float(distance_output.split()[7])
 log_file.writelines('dist output: ' + str(distance_output) + '\n')
 gradient_correction = calculate_gradient_correction(distance_cc)
@@ -115,7 +115,7 @@ gradient_file = open('gradient', 'r')
 gradient_file_data = gradient_file.readlines()
 gradient_file.close()
 dEdq_line1_raw = gradient_file_data[-2-no_atoms+carbon_index_1]
-dEdq_line2_raw = gradient_file_data[-1-no_atoms+carbon_index_2]
+dEdq_line2_raw = gradient_file_data[-2-no_atoms+carbon_index_2]
 dEdq_line1 = [float(s) for s in dEdq_line1_raw.replace('D', 'e').split()]
 dEdq_line2 = [float(s) for s in dEdq_line2_raw.replace('D', 'e').split()]
 log_file.writelines('1st atom gradient: ' + dEdq_line1_raw + '\n')
@@ -135,7 +135,7 @@ new_energy_string = str(energy + energy_correction)
 
 
 #  Translate from sensible formatting into FORTRAN
-log_file.writelines(str(new_dEs))
+log_file.writelines(str(new_dEs) + '\n')
 new_dE_string1 = '  %s  %s  %s\n' % (translate_into_fortran(new_dEs[0][0]),
                                      translate_into_fortran(new_dEs[0][1]),
                                      translate_into_fortran(new_dEs[0][2]))
