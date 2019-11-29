@@ -3,54 +3,54 @@ import subprocess
 import math
 import numpy
 
-# Old Ethane fit
-'''
-no_atoms = 8
-a = 0.484478
-b = 1.68407
-x0 = 2.41293
-factor = 1.0
-'''
+# Optimisation command:
+# jobex -l $PWD/bin -relax -c N
+# where N is the max iterations to run
 
-# Staggered Ethane fit (new basis)
-'''
-no_atoms = 8
-a = 0.470363
-b = 1.67927
-x0 = 2.43377
-factor = 1.0
-'''
-
-
-# Eclipsed Ethane fit (new basis)
-
-no_atoms = 15
-a = 0.472942
-b = 1.68207
-x0 = 2.43729
-factor = 1.0
-
-
-
-# Ethene fit (new basis)
-'''
-no_atoms = 8
-a = 3.48487
-b = 1.94326
-c = -2.72191
-x0 = 1.74196
-factor = 1.0
-'''
-
-# Ethene fit (new basis)
-'''
-no_atoms = 8
-a = 368.126
-b = 0.169015
-c = -2.70009
-x0 = -3.53757
-factor = 1.0
-'''
+fits_dicts = {
+    # Old Ethane fit
+    'old_etha_fit': {
+        'no_atoms': 8,
+        'a': 0.484478,
+        'b': 1.68407,
+        'x0': 2.41293,
+        'factor': 1.0
+    },
+    # Staggered Ethane fit (new basis)
+    'st_etha_fit': {
+        'no_atoms': 8,
+        'a': 0.470363,
+        'b': 1.67927,
+        'x0': 2.43377,
+        'factor': 1.0
+    },
+    # Eclipsed Ethane fit (new basis)
+    'ec_etha_fit': {
+        'no_atoms': 15,
+        'a': 0.472942,
+        'b': 1.68207,
+        'x0': 2.43729,
+        'factor': 1.0,
+    },
+    # Ethene fit (new basis)
+    'ethe_fit_1': {
+        'no_atoms': 8,
+        'a': 3.48487,
+        'b': 1.94326,
+        'c': -2.72191,
+        'x0': 1.74196,
+        'factor': 1.0
+    },
+    # Ethene fit (new basis)
+    'ethe_fit_2': {
+        'no_atoms': 8,
+        'a': 368.126,
+        'b': 0.169015,
+        'c': -2.70009,
+        'x0': -3.53757,
+        'factor': 1.0
+    }
+}
 
 gradient_pair_indices = [
     [4, 3],
@@ -63,18 +63,19 @@ class GradientCheat():
     def __init__(self):
         self.gradient_pair_indices = gradient_pair_indices
         self.log_file = None
+        self.fit = fits_dicts['ethe_fit_1']
 
     def calculate_gradient_correction(self, dcc):
-        return -b * a * math.exp(-b*(dcc - x0))
-        #return 2 * -b * a * (dcc-x0) * math.exp(-b*(dcc - x0)**2)
+        return -self.fit['b'] * self.fit['a'] * math.exp(-self.fit['b']*(dcc - self.fit['x0']))
+        #return 2 * -self.fit['b'] * self.fit['a'] * (dcc-self.fit['x0']) * math.exp(-self.fit['b']*(dcc - self.fit['x0'])**2)
 
     def calculate_energy_correction(self, dcc):
-        return a * math.exp(-b*(dcc - x0))
-        # return a * math.exp(-b*(dcc - x0)) + c
-        #return a * math.exp(-b*(dcc - x0)**2) + c
+        return self.fit['a'] * math.exp(-self.fit['b']*(dcc - self.fit['x0']))
+        # return self.fit['a'] * math.exp(-self.fit['b']*(dcc - self.fit['x0'])) + self.fit['c']
+        # return self.fit['a'] * math.exp(-self.fit['b']*(dcc - self.fit['x0'])**2) + self.fit['c']
 
     def lengtherise_vector(self, vector, target_length):
-        # current_length = numpy.linalg.norm(numpy.array(vector))
+        # current_length = numpy.linalg.norm(numpy.array(vector))ls
         current_length = numpy.linalg.norm(vector)
         return vector * (target_length/current_length)
 
